@@ -8,9 +8,10 @@ email notifications via QQ Mail.
 
 ```bash
 vim config.toml          # edit routes, price, passenger
-./scan.sh                # headed scan (dry-run)
+echo "SMTP_USER=xxx@qq.com" > .env   # SMTP credentials
+echo "SMTP_PASS=xxx" >> .env
+./scan.sh                # headed dry-run scan
 ./test.sh                # run 51 pytest tests
-SMTP_USER=xxx@qq.com SMTP_PASS=xxx ./scan.sh   # production
 ```
 
 ## Requirements
@@ -31,6 +32,21 @@ SMTP_USER=xxx@qq.com SMTP_PASS=xxx ./scan.sh   # production
 7. If matches found: consolidates all days, sends one email
 8. If no matches: computes fallback recommendations A (cheapest) & B (relaxed direct)
 9. Deduplicates against `history.json` (48h window)
+
+## SMTP credentials
+
+Create `.env` in the project root:
+
+```bash
+echo "SMTP_USER=your_email@qq.com" >> .env
+echo "SMTP_PASS=your_app_password" >> .env
+```
+
+Or set environment variables directly:
+```bash
+export SMTP_USER=your_email@qq.com
+export SMTP_PASS=your_app_password
+```
 
 ## Configuration (`config.toml`)
 
@@ -82,5 +98,5 @@ debug/         Debug shell scripts
 ## Cron
 
 ```
-0 2 * * 6,0  cd /path/to/db_ticket && SMTP_USER=xxx SMTP_PASS=xxx xvfb-run ./scan.sh
+0 2 * * 6,0  cd /path/to/db_ticket && xvfb-run ./scan.sh
 ```

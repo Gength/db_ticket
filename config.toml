@@ -30,9 +30,5 @@ exclude_departure_end = "00:00"
 [smtp]
 host = "smtp.qq.com"
 port = 465
-# Credentials must be provided via environment variables:
-#   SMTP_USER=your_qq_email@qq.com
-#   SMTP_PASS=your_app_password
-user_env = "SMTP_USER"
-pass_env = "SMTP_PASS"
+# Credentials via .env file: SMTP_USER=xxx SMTP_PASS=xxx
 to_email = "gengtianhao@outlook.com"

@@ -57,3 +57,5 @@ SMTP_USER=xxx SMTP_PASS=xxx ./scan.sh   # produce, no dry-run
   Adult (27-64) = `13:16`. Using `27:64` triggers a warning dialog.
 - **Station IBNR** is hardcoded in `scraper.py`. Add unknown stations there.
 - **Email is NOT dry-run by default** — pass `--dry-run` to test without sending.
+- **SMTP credentials** come from `.env` file (SMTP_USER / SMTP_PASS) or
+  environment variables. Not stored in config.toml.

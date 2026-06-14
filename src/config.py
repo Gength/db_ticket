@@ -110,30 +110,19 @@ class FilterConfig(BaseModel):
 
 
 class SMTPConfig(BaseModel):
-    """SMTP credentials — actual values read from env vars."""
+    """SMTP credentials read from environment (or .env)."""
     host: str = "smtp.qq.com"
     port: int = 465
-    user_env: str = "SMTP_USER"
-    pass_env: str = "SMTP_PASS"
     to_email: str = ""
 
     def user(self) -> Optional[str]:
-        val = os.environ.get(self.user_env)
+        val = os.environ.get("SMTP_USER")
         if val:
             return val
-        # If user_env itself looks like an email, use as-is
-        if "@" in self.user_env and self.user_env.count(".") >= 1:
-            return self.user_env
-        return None
+        return os.environ.get("SMTP_USER_FALLBACK")
 
     def password(self) -> Optional[str]:
-        val = os.environ.get(self.pass_env)
-        if val:
-            return val
-        # If pass_env is a non-empty string that isn't a valid env key, use as-is
-        if self.pass_env and not self.pass_env.isupper():
-            return self.pass_env
-        return None
+        return os.environ.get("SMTP_PASS")
 
 
 # ── Top-level config ─────────────────────────────────────────────────────────
