@@ -2,16 +2,16 @@
 
 Deutsche Bahn weekend promotional ticket scanner. Searches DB for
 "Sparpreis" tickets matching price/class/transfer criteria and sends
-email notifications via QQ Mail.
+email notifications via msmtp + bsd-mailx (any SMTP provider).
 
 ## Quick start
 
 ```bash
-vim config.toml          # edit routes, price, passenger
-echo "SMTP_USER=xxx@qq.com" > .env   # SMTP credentials
-echo "SMTP_PASS=xxx" >> .env
-./scan.sh                # headed dry-run scan
-./test.sh                # run 51 pytest tests
+sudo apt install msmtp msmtp-mta bsd-mailx   # system MTA
+vim ~/.msmtprc                               # SMTP credentials
+vim config.toml                              # edit routes, price, passenger
+./scan.sh                                    # headed dry-run scan
+./test.sh                                    # run 51 pytest tests
 ```
 
 ## Requirements
@@ -19,7 +19,7 @@ echo "SMTP_PASS=xxx" >> .env
 - WSL2 (Ubuntu 22.04/24.04) with WSLg
 - Python 3.12+, [uv](https://docs.astral.sh/uv/)
 - Google Chrome (Playwright `channel="chrome"`)
-- QQ Mail App Password (for SMTP)
+- msmtp, msmtp-mta, bsd-mailx (`sudo apt install`)
 
 ## How it works
 
@@ -31,21 +31,39 @@ echo "SMTP_PASS=xxx" >> .env
 6. Filters: price cap → class → direct-only → transfer safety → time exclusion
 7. If matches found: consolidates all days, sends one email
 8. If no matches: computes fallback recommendations A (cheapest) & B (relaxed direct)
-9. Deduplicates against `history.json` (48h window)
+9. Records notifications in `history.json` for price-change display in future emails
 
-## SMTP credentials
+## SMTP / msmtp setup
 
-Create `.env` in the project root:
+Install the system MTA:
 
 ```bash
-echo "SMTP_USER=your_email@qq.com" >> .env
-echo "SMTP_PASS=your_app_password" >> .env
+sudo apt install msmtp msmtp-mta bsd-mailx
 ```
 
-Or set environment variables directly:
+Create `~/.msmtprc` with your email credentials (any SMTP provider):
+
 ```bash
-export SMTP_USER=your_email@qq.com
-export SMTP_PASS=your_app_password
+cat > ~/.msmtprc <<'EOF'
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+
+account        default
+host           smtp.example.com
+port           465
+from           your_email@example.com
+user           your_email@example.com
+password       your_app_password
+EOF
+chmod 600 ~/.msmtprc
+```
+
+Test with:
+
+```bash
+echo "Test from DB scanner" | mail -s "Test" you@example.com
 ```
 
 ## Configuration (`config.toml`)
@@ -73,9 +91,9 @@ exclude_departure_start = "00:00"
 exclude_departure_end = "00:00"
 
 [smtp]
-host = "smtp.qq.com"
+host = "smtp.example.com"
 port = 465
-to_email = "xxx@outlook.com"
+to_email = "you@example.com"
 ```
 
 ## Project structure
@@ -90,7 +108,7 @@ src/
   filter.py    Filtering & scoring pipeline
   fallback.py  Recommendation A & B
   notifier.py  SMTP email composition
-  state.py     history.json 48h dedup
+  state.py     history.json price history & recording
 tests/         51 pytest tests
 debug/         Debug shell scripts
 ```

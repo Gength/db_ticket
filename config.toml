@@ -18,7 +18,7 @@ age = 28
 bahncard = "none"
 
 [filters]
-target_price = 30.0
+target_price = 50.0
 ticket_class = "2nd"
 direct_only = true
 max_transfers = 1
@@ -32,3 +32,4 @@ host = "smtp.qq.com"
 port = 465
 # Credentials via .env file: SMTP_USER=xxx SMTP_PASS=xxx
 to_email = "gengtianhao@outlook.com"
+# cc = "fanshiyu.max@foxmail.com"  # optional CC for notifications

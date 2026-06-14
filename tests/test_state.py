@@ -1,12 +1,7 @@
-"""Tests for state management and 48h dedup logic."""
+"""Tests for state management — price history recording and lookup."""
 
 import json
-import os
-import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-
-import pytest
 
 from src.models import Connection, NotificationRecord, TicketResult
 from src.state import StateManager
@@ -37,118 +32,94 @@ def _ticket(
     return TicketResult(connection=conn, score=90.0, is_fallback=is_fallback)
 
 
-class TestStateManager:
-    """Basic read/write and dedup behavior."""
+class TestLastPrice:
+    """Price history lookup."""
 
-    def test_empty_history_allows_notification(self, tmp_path):
+    def test_no_history_returns_none(self, tmp_path):
         db = tmp_path / "test_history.json"
         state = StateManager(db)
-        ticket = _ticket("uid-1", 50.0)
-        assert state.should_notify(ticket) is True
+        assert state.last_price("uid-1") is None
 
-    def test_same_uid_higher_price_suppressed(self, tmp_path):
-        db = tmp_path / "test_history.json"
-        state = StateManager(db)
-
-        # First notification at 40 EUR
-        rec = NotificationRecord(
-            connection_uid="uid-1",
-            price=40.0,
-            travel_class="2nd",
-            notified_at=datetime.now(timezone.utc).isoformat(),
-            notification_type="match",
-            from_station="A",
-            to_station="B",
-            departure=NOW.isoformat(),
-        )
-        state.save(rec)
-
-        # Same connection at 50 EUR (higher price) → suppress
-        ticket = _ticket("uid-1", 50.0)
-        assert state.should_notify(ticket) is False
-
-    def test_same_uid_lower_price_allowed(self, tmp_path):
+    def test_returns_most_recent_price(self, tmp_path):
         db = tmp_path / "test_history.json"
         state = StateManager(db)
 
-        # First notification at 50 EUR
-        rec = NotificationRecord(
+        r1 = NotificationRecord(
             connection_uid="uid-1",
             price=50.0,
             travel_class="2nd",
-            notified_at=datetime.now(timezone.utc).isoformat(),
+            notified_at="2026-06-13T08:00:00+00:00",
             notification_type="match",
             from_station="A",
             to_station="B",
             departure=NOW.isoformat(),
         )
-        state.save(rec)
+        r2 = NotificationRecord(
+            connection_uid="uid-1",
+            price=40.0,
+            travel_class="2nd",
+            notified_at="2026-06-14T08:00:00+00:00",
+            notification_type="match",
+            from_station="A",
+            to_station="B",
+            departure=NOW.isoformat(),
+        )
+        state.save(r1)
+        state.save(r2)
 
-        # Same connection at 30 EUR (lower price = better deal) → allow
-        ticket = _ticket("uid-1", 30.0)
-        assert state.should_notify(ticket) is True
+        assert state.last_price("uid-1") == 40.0
 
-    def test_different_uid_allowed(self, tmp_path):
+    def test_different_uid_returns_none(self, tmp_path):
         db = tmp_path / "test_history.json"
         state = StateManager(db)
 
-        rec = NotificationRecord(
+        r = NotificationRecord(
             connection_uid="uid-1",
             price=50.0,
             travel_class="2nd",
-            notified_at=datetime.now(timezone.utc).isoformat(),
+            notified_at="2026-06-13T08:00:00+00:00",
             notification_type="match",
             from_station="A",
             to_station="B",
             departure=NOW.isoformat(),
         )
-        state.save(rec)
+        state.save(r)
 
-        # Different connection → allow
-        ticket = _ticket("uid-2", 60.0)
-        assert state.should_notify(ticket) is True
+        assert state.last_price("uid-2") is None
 
-    def test_different_notification_type_not_suppressed(self, tmp_path):
-        """A match notification shouldn't suppress a fallback for the same UID."""
+    def test_type_filter_respected(self, tmp_path):
+        """match and fallback lookups don't cross-contaminate."""
         db = tmp_path / "test_history.json"
         state = StateManager(db)
 
-        rec = NotificationRecord(
+        r = NotificationRecord(
             connection_uid="uid-1",
-            price=40.0,
+            price=50.0,
             travel_class="2nd",
-            notified_at=datetime.now(timezone.utc).isoformat(),
+            notified_at="2026-06-13T08:00:00+00:00",
             notification_type="match",
             from_station="A",
             to_station="B",
             departure=NOW.isoformat(),
         )
-        state.save(rec)
+        state.save(r)
 
-        # Same UID but fallback type → allow
-        ticket = _ticket("uid-1", 50.0, is_fallback=True)
-        assert state.should_notify(ticket) is True
+        assert state.last_price("uid-1", "match") == 50.0
+        assert state.last_price("uid-1", "fallback") is None
 
-    def test_expired_record_allows_notification(self, tmp_path):
+
+class TestSaveAndPrune:
+    """Record persistence and cleanup."""
+
+    def test_save_persists_record(self, tmp_path):
         db = tmp_path / "test_history.json"
         state = StateManager(db)
-
-        # Record older than 48h
-        old_time = datetime.now(timezone.utc) - timedelta(hours=50)
-        rec = NotificationRecord(
-            connection_uid="uid-1",
-            price=40.0,
-            travel_class="2nd",
-            notified_at=old_time.isoformat(),
-            notification_type="match",
-            from_station="A",
-            to_station="B",
-            departure=NOW.isoformat(),
-        )
-        state.save(rec)
 
         ticket = _ticket("uid-1", 50.0)
-        assert state.should_notify(ticket) is True
+        rec = NotificationRecord.from_ticket(ticket)
+        state.save(rec)
+
+        assert state.last_price("uid-1") == 50.0
 
     def test_prune_removes_old_records(self, tmp_path):
         db = tmp_path / "test_history.json"
@@ -158,7 +129,7 @@ class TestStateManager:
             connection_uid="old",
             price=10.0,
             travel_class="2nd",
-            notified_at=(datetime.now(timezone.utc) - timedelta(hours=50)).isoformat(),
+            notified_at=(datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),
             notification_type="match",
             from_station="A",
             to_station="B",
@@ -175,7 +146,6 @@ class TestStateManager:
             departure=NOW.isoformat(),
         )
 
-        # Write both records directly to bypass save()'s auto-prune
         db.parent.mkdir(parents=True, exist_ok=True)
         with open(db, "w", encoding="utf-8") as f:
             json.dump([old.to_dict(), new.to_dict()], f)
@@ -183,7 +153,6 @@ class TestStateManager:
         removed = state.prune()
         assert removed == 1
 
-        # The old record should be gone
         with open(db) as f:
             data = json.load(f)
         uids = [r["connection_uid"] for r in data]

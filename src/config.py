@@ -114,6 +114,7 @@ class SMTPConfig(BaseModel):
     host: str = "smtp.qq.com"
     port: int = 465
     to_email: str = ""
+    cc: str = ""  # optional CC recipient for notifications
 
     def user(self) -> Optional[str]:
         val = os.environ.get("SMTP_USER")
@@ -125,6 +126,37 @@ class SMTPConfig(BaseModel):
         return os.environ.get("SMTP_PASS")
 
 
+# ── Timeouts ──────────────────────────────────────────────────────────────────
+
+class TimeoutsConfig(BaseModel):
+    """
+    Wait times and retry limits for the browser-based scraper.
+
+    All values have sensible defaults — only override if you're
+    on a slow connection or need to reduce debug wait cycles.
+    """
+
+    # Page-level default timeout for Playwright operations (ms)
+    default_timeout_ms: int = 90_000
+
+    # How long to wait for the initial page to load (ms)
+    page_load_timeout_ms: int = 30_000
+
+    # Bestpreise slots: max wait for them to appear after page load (ms)
+    # Uses Playwright's wait_for (event-driven), not polling
+    slot_wait_timeout_ms: int = 15_000
+
+    # After clicking a slot, wait for results
+    slot_click_delay_s: int = 3
+
+    # Parse retries after click
+    slot_parse_retries: int = 10
+    slot_parse_delay_s: int = 1
+
+    # Cookie consent button detection
+    cookie_check_timeout_ms: int = 500
+
+
 # ── Top-level config ─────────────────────────────────────────────────────────
 
 class AppConfig(BaseModel):
@@ -133,6 +165,7 @@ class AppConfig(BaseModel):
     passenger: PassengerConfig
     filters: FilterConfig
     smtp: SMTPConfig = SMTPConfig()
+    timeouts: TimeoutsConfig = TimeoutsConfig()
 
 
 # ── Loader ───────────────────────────────────────────────────────────────────

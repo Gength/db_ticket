@@ -65,9 +65,9 @@ When processing returned train schedules, the Agent must filter and sort data us
   * **Standard Match**: Email subject must be `[DB Alert] Match Found!`. The body contains a Markdown table of qualified tickets.
   * **Fallback Notification**: Email subject must be `[DB Info] No Matches - Alternative Recommendations`. The body must clearly list **Recommendation A** and **Recommendation B** with a prominent notice: *"No tickets found under your target price of {target_price} EUR. Here are the closest alternatives."*
 
-### 4.2 State Management & Anti-Spam
-* Maintain a local JSON cache (`history.json`) to track triggered notifications.
-* **Rule**: Do not send an alert if the exact same train connection at the same or higher price was successfully notified within the last 48 hours (applies to both Standard and Fallback notifications).
+### 4.2 State Management & Price History
+* Maintain a local JSON cache (`history.json`) to record all sent notifications with timestamps and prices.
+* **Purpose**: Compare current ticket prices against the last notified price for the same connection, displaying price changes (↑ / ↓ / —) in the email. No dedup logic — notification frequency is controlled by cron.
 
 ## 5. Technical Stack Constraints
 * **Environment**: WSL2 (Ubuntu 22.04/24.04 LTS) with WSLg enabled.

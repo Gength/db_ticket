@@ -24,8 +24,8 @@ src/
   filter.py        # Pipeline: price cap → class → direct-only → transfer safety →
                    #   time exclusion → scoring
   fallback.py      # Rec A (cheapest over-budget) & Rec B (relaxed direct-only)
-  notifier.py      # QQ Mail SMTP_SSL, Markdown table + HTML body
-  state.py         # history.json cache, 48h dedup
+  notifier.py      # Mail SMTP_SSL, Markdown table + HTML body
+  state.py         # history.json price history
 tests/             # test_config, test_filter, test_fallback, test_state (51 tests)
 debug/             # debug shell scripts
 ```

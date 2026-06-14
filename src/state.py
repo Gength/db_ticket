@@ -1,10 +1,9 @@
 """
 State management for DB Weekend Ticket Scanner.
 
-Maintains a ``history.json`` file tracking all sent notifications.
-Implements the 48-hour anti-spam rule: a notification is suppressed
-when the same connection was already notified at the same or lower
-price within the last 48 hours.
+Maintains a ``history.json`` file recording all sent notifications.
+Used to display price changes (↑ / ↓) in emails — no dedup logic.
+Scan frequency is controlled by cron.
 """
 
 from __future__ import annotations
@@ -13,26 +12,21 @@ import json
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-from src.models import NotificationRecord, TicketResult
+from src.models import NotificationRecord
 
 
 class StateManager:
     """
     Thread-safe JSON-backed notification history.
 
-    Rule (from spec §4.2):
-        Do not send an alert if the exact same train connection at the
-        same or **higher** price was successfully notified within the
-        last 48 hours.
-
-    Interpretation: if we already told the user about a ticket at price
-    P, we should skip a ticket for the same connection at price ≥ P
-    within 48 h. A *lower* price (better deal) is always worth notifying.
+    Records every sent notification so the next scan can compare
+    prices and show the change (cheaper / more expensive / same).
+    Old records (>30 days) are pruned on save to keep the file small.
     """
 
-    DEDUP_HOURS = 48
+    PRUNE_DAYS = 30
 
     def __init__(self, path: str | Path = "history.json") -> None:
         self._path = Path(path)
@@ -52,12 +46,11 @@ class StateManager:
         return [NotificationRecord.from_dict(r) for r in raw]
 
     def save(self, record: NotificationRecord) -> None:
-        """Append a single notification record to the history file."""
+        """Append a single notification record and prune old entries."""
         with self._lock:
             records = self._read()
             records.append(record)
-            # Prune records older than 48h to keep file small
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=self.DEDUP_HOURS)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=self.PRUNE_DAYS)
             records = [
                 r for r in records
                 if datetime.fromisoformat(r.notified_at) > cutoff
@@ -75,46 +68,39 @@ class StateManager:
                 indent=2,
             )
 
-    # ── Dedup logic ──────────────────────────────────────────────────────
+    # ── Price history lookup ─────────────────────────────────────────────
 
-    def should_notify(self, ticket: TicketResult) -> bool:
+    def last_price(self, uid: str, notification_type: str = "match") -> Optional[float]:
         """
-        Return True when the ticket is worth notifying under the
-        48-hour rule.
-
-        A notification is suppressed when the same connection UID was
-        already notified within 48 h at a price ≤ the current ticket's
-        price AND the notification type matches (match vs fallback).
+        Return the most recent notified price for a connection UID,
+        or None if never notified before.
         """
-        conn = ticket.connection
-        current_type = "fallback" if ticket.is_fallback else "match"
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.DEDUP_HOURS)
+        best: Optional[float] = None
+        best_time: Optional[datetime] = None
 
         with self._lock:
             records = self._read()
 
         for rec in records:
-            if rec.connection_uid != conn.uid:
+            if rec.connection_uid != uid:
                 continue
-            if rec.notification_type != current_type:
+            if rec.notification_type != notification_type:
                 continue
             try:
                 notified_at = datetime.fromisoformat(rec.notified_at)
             except ValueError:
                 continue
-            if notified_at < cutoff:
-                continue
-            # Already notified same connection at lower-or-equal price → skip
-            if rec.price <= conn.price:
-                return False
+            if best_time is None or notified_at > best_time:
+                best = rec.price
+                best_time = notified_at
 
-        return True
+        return best
 
     # ── Housekeeping ─────────────────────────────────────────────────────
 
     def prune(self) -> int:
-        """Remove records older than 48 h. Returns number removed."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.DEDUP_HOURS)
+        """Remove records older than 30 days. Returns number removed."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.PRUNE_DAYS)
         with self._lock:
             before = self._read()
             after = [

@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from typing import List
 
 from src.browser import BrowserFactory
-from src.config import BahnCard, PassengerConfig, RouteConfig, TicketClass
+from src.config import BahnCard, PassengerConfig, RouteConfig, TicketClass, TimeoutsConfig
 from src.models import Connection
 
 logger = logging.getLogger(__name__)
@@ -92,8 +92,9 @@ def _station_id(name: str, ibnr: str, x: int, y: int) -> str:
 
 class DBScraper:
 
-    def __init__(self) -> None:
+    def __init__(self, timeouts_cfg: TimeoutsConfig | None = None) -> None:
         self._factory = BrowserFactory()
+        self._timeouts = timeouts_cfg or TimeoutsConfig()
 
     async def search(
         self,
@@ -104,36 +105,35 @@ class DBScraper:
     ) -> List[Connection]:
         async with self._factory as (browser, context):
             page = await context.new_page()
-            page.set_default_timeout(90_000)
+            t = self._timeouts
+            page.set_default_timeout(t.default_timeout_ms)
             try:
                 self._current_date = search_date  # for _parse_one to use
                 url = self._build_url(route, search_date, passenger, ticket_class)
                 logger.info("→ %s", url[:100])
 
-                await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=t.page_load_timeout_ms)
 
-                # Wait for connections to appear (bp=true loads all on one page)
-                for i in range(25):
-                    await asyncio.sleep(2)
+                # Dismiss cookie dialogs immediately (appear right after nav)
+                for btn_text in ["Schließen", "Allow all cookies", "Alle akzeptieren"]:
+                    try:
+                        btn = page.locator(f'button:has-text("{btn_text}")').first
+                        if await btn.is_visible(timeout=t.cookie_check_timeout_ms):
+                            await btn.click()
+                            logger.info("Dismissed: %s", btn_text)
+                            await asyncio.sleep(1)
+                    except Exception:
+                        pass
 
-                    for btn_text in ["Schließen", "Allow all cookies", "Alle akzeptieren"]:
-                        try:
-                            btn = page.locator(f'button:has-text("{btn_text}")').first
-                            if await btn.is_visible(timeout=500):
-                                await btn.click()
-                                logger.info("Dismissed: %s", btn_text)
-                                await asyncio.sleep(1)
-                        except Exception:
-                            pass
-
-                    # Wait for Bestpreise slot buttons then try each
-                    slots = page.locator('button:has-text("Von"):has-text("Uhr"):has-text("ab")')
+                # Event-driven wait for Bestpreise slots — returns instantly when they appear
+                slots = page.locator('button:has-text("Von"):has-text("Uhr"):has-text("ab")')
+                try:
+                    await slots.first.wait_for(state="visible", timeout=t.slot_wait_timeout_ms)
                     n = await slots.count()
-                    if n > 0:
-                        logger.info("Bestpreise slots loaded: %d after %ds", n, (i + 1) * 2)
-                        all_conns = await self._try_all_slots(page, route, slots)
-                        return all_conns
-                else:
+                    logger.info("Bestpreise slots loaded: %d", n)
+                    all_conns = await self._try_all_slots(page, route, slots)
+                    return all_conns
+                except Exception:
                     logger.warning("Bestpreise slots not found — trying parse without click")
                     conns = await self._parse(page, route)
                     if conns:
@@ -258,12 +258,12 @@ class DBScraper:
         for idx, price in slot_info:
             logger.info("Slot #%d (%.2f€) ...", idx, price)
             await slots.nth(idx).click()
-            await asyncio.sleep(3)
-            for _ in range(10):
+            await asyncio.sleep(self._timeouts.slot_click_delay_s)
+            for _ in range(self._timeouts.slot_parse_retries):
                 conns = await self._parse(page, route)
                 if conns:
                     break
-                await asyncio.sleep(1)
+                await asyncio.sleep(self._timeouts.slot_parse_delay_s)
             new = [c for c in conns if c.uid not in seen]
             for c in new:
                 seen.add(c.uid)
@@ -320,9 +320,10 @@ class DBScraper:
         tr_m = re.search(r"(\d+)\s*Umstieg", text)
         transfers = int(tr_m.group(1)) if tr_m else 0
 
-        # Train types
-        trains = re.findall(r"\b(ICE|IC|EC|RE|RB|S\d*|IRE|TGV|RJ|NJ|FLX)\b", text)
-        trains = list(dict.fromkeys(trains))
+        # Train numbers: "ICE 505", "ICE 1107", "RE3", "S2"
+        # "ICE Sprinter" is a label, not a separate train — skip it
+        trains = re.findall(r"\b((?:ICE|IC|EC|RE|RB|IRE|TGV|RJ|NJ|FLX)\s*\d+|S\d+)\b", text)
+        trains = [t.strip() for t in dict.fromkeys(trains) if t.strip()]
 
         # Class
         tclass = "1st" if "1. Klasse" in text else "2nd"

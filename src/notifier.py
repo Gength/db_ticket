@@ -59,8 +59,8 @@ def send_match_notification(
         "",
         f"Target price: **≤ {target_price:.2f} EUR**",
         "",
-        "| # | Date | From | To | Departure | Arrival | Duration | Price | Class | Transfers | Train |",
-        "|---|------|------|----|-----------|---------|----------|-------|-------|-----------|-------|",
+        "| # | Date | From | To | Departure | Arrival | Duration | Price | Δ | Class | Transfers | Transfer Time | Train |",
+        "|---|------|------|----|-----------|---------|----------|-------|---|-------|-----------|---------------|-------|",
     ]
 
     for i, t in enumerate(tickets, start=1):
@@ -71,13 +71,25 @@ def send_match_notification(
         dur = f"{conn.duration_minutes} min"
         transfers = "Direct" if conn.is_direct else str(conn.transfers)
         trains = ", ".join(conn.train_types) if conn.train_types else "—"
+        tt = f"{conn.transfer_time} min" if conn.transfers > 0 else "—"
         link_cell = f"[Book]({conn.link})" if conn.link else "—"
+
+        # Price change indicator
+        if t.prev_price is None:
+            delta = "—"
+        elif t.prev_price > conn.price:
+            delta = "↓"
+        elif t.prev_price < conn.price:
+            delta = "↑"
+        else:
+            delta = "—"
 
         lines.append(
             f"| {i} | {date_str} | {conn.from_station} | {conn.to_station} "
             f"| {dep} | {arr} | {dur} "
-            f"| {conn.price:.2f} € | {conn.travel_class} "
-            f"| {transfers} | {trains} |"
+            f"| {conn.price:.2f} € | {delta} "
+            f"| {conn.travel_class} "
+            f"| {transfers} | {tt} | {trains} |"
         )
 
     body = "\n".join(lines)
@@ -135,6 +147,7 @@ def send_fallback_notification(
             f"- Date: {conn.departure.strftime('%d.%m.%Y')}",
             f"- Departure: {dep} · Arrival: {arr} · Duration: {conn.duration_minutes} min",
             f"- Price: **{conn.price:.2f} EUR** ({conn.travel_class})",
+            _price_change_line(rec_a),
             f"- Transfers: {transfers}",
             f"- Train(s): {', '.join(conn.train_types) if conn.train_types else '—'}",
             "",
@@ -152,6 +165,7 @@ def send_fallback_notification(
             f"- Date: {date_str}",
             f"- Departure: {dep} · Arrival: {arr} · Duration: {conn.duration_minutes} min",
             f"- Price: **{conn.price:.2f} EUR** ({conn.travel_class})",
+            _price_change_line(rec_b),
             f"- Transfers: {conn.transfers} (min transfer time: {conn.transfer_time} min)",
             f"- Train(s): {', '.join(conn.train_types) if conn.train_types else '—'}",
             "",
@@ -162,6 +176,24 @@ def send_fallback_notification(
 
     body = "\n".join(lines)
     return _send_email(smtp_cfg, subject, body, dry_run)
+
+
+# ── Price change helper ─────────────────────────────────────────────────────
+
+def _price_change_line(ticket: TicketResult) -> str:
+    """Return a Markdown line showing price change vs last notification."""
+    if ticket.prev_price is None:
+        return ""
+    diff = ticket.connection.price - ticket.prev_price
+    if diff < 0:
+        return "- Price change: **↓ {:.2f} EUR cheaper** (was {:.2f} EUR)".format(
+            abs(diff), ticket.prev_price)
+    elif diff > 0:
+        return "- Price change: **↑ {:.2f} EUR more expensive** (was {:.2f} EUR)".format(
+            diff, ticket.prev_price)
+    else:
+        return "- Price change: — same as last notification ({:.2f} EUR)".format(
+            ticket.prev_price)
 
 
 # ── Low-level SMTP sender ────────────────────────────────────────────────────
@@ -198,6 +230,11 @@ def _send_email(
     msg["From"] = user
     msg["To"] = to_addr
 
+    # Optional CC
+    cc_addr = smtp_cfg.cc.strip() if smtp_cfg.cc else ""
+    if cc_addr:
+        msg["Cc"] = cc_addr
+
     # Attach both plain-text and HTML versions
     plain = body  # Markdown is readable as plain text
     html = _markdown_to_html(body)
@@ -208,6 +245,8 @@ def _send_email(
         logger.info("DRY RUN — would send email:")
         logger.info("  Subject: %s", subject)
         logger.info("  To: %s", to_addr)
+        if cc_addr:
+            logger.info("  Cc: %s", cc_addr)
         logger.info("  Body:\n%s", body)
         return True
 
@@ -215,8 +254,12 @@ def _send_email(
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL(smtp_cfg.host, smtp_cfg.port, context=context) as server:
             server.login(user, password)
-            server.sendmail(user, to_addr, msg.as_string())
-        logger.info("Email sent successfully to %s", to_addr)
+            recipients = [to_addr]
+            if cc_addr:
+                recipients.append(cc_addr)
+            server.sendmail(user, recipients, msg.as_string())
+        addrs = to_addr + (f" (Cc: {cc_addr})" if cc_addr else "")
+        logger.info("Email sent successfully to %s", addrs)
         return True
     except smtplib.SMTPException as exc:
         logger.error("SMTP error sending email: %s", exc)

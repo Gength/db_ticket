@@ -2,7 +2,9 @@
 CLI entry point for DB Weekend Ticket Scanner.
 
 Orchestrates the full pipeline:
-  config → scrape → filter → fallback → dedup → notify
+  config → scrape → filter → fallback → notify → record
+
+Price history is tracked in history.json for price-change display.
 
 Supports two subcommands:
   * ``scan`` — run the full ticket search (default for cron).
@@ -23,7 +25,7 @@ import sys
 from datetime import date, timedelta
 from typing import List
 
-from src.config import AppConfig, FilterConfig, RouteConfig, TicketClass, load_config
+from src.config import AppConfig, RouteConfig, TicketClass, load_config
 from src.filter import filter_and_rank
 from src.fallback import compute_fallbacks
 from src.models import Connection, NotificationRecord, TicketResult
@@ -114,7 +116,7 @@ async def _cmd_scan(args) -> None:
     """Run the full scanning pipeline."""
     cfg = load_config(args.config)
     state = StateManager("history.json")
-    scraper = DBScraper()
+    scraper = DBScraper(cfg.timeouts)
 
     logger.info("=" * 60)
     logger.info("DB Weekend Ticket Scanner — starting scan")
@@ -158,17 +160,19 @@ async def _cmd_scan(args) -> None:
             matches = filter_and_rank(connections, cfg.filters)
 
             if matches:
-                to_notify = _dedup(state, matches, cfg.filters)
-                all_matches.extend(to_notify)
-                if to_notify:
-                    logger.info("  %d match(es) on %s", len(to_notify), day)
-                else:
-                    logger.info("  %d match(es) but suppressed by dedup", len(matches))
+                # Look up historical prices for price-change display
+                for t in matches:
+                    t.prev_price = state.last_price(t.connection.uid,
+                                                     "fallback" if t.is_fallback else "match")
+                all_matches.extend(matches)
+                logger.info("  %d match(es) on %s", len(matches), day)
             else:
                 rec_a, rec_b = compute_fallbacks(connections, cfg.filters)
-                if rec_a and state.should_notify(rec_a):
+                if rec_a:
+                    rec_a.prev_price = state.last_price(rec_a.connection.uid, "fallback")
                     all_fb_a.append(rec_a)
-                if rec_b and state.should_notify(rec_b):
+                if rec_b:
+                    rec_b.prev_price = state.last_price(rec_b.connection.uid, "fallback")
                     all_fb_b.append(rec_b)
                 logger.info("  No matches on %s — fallback: A=%s B=%s",
                             day,
@@ -280,15 +284,6 @@ def _date_range(cfg: AppConfig, limit: int = 0) -> List[date]:
         if limit > 0 and len(days) >= limit:
             break
     return days
-
-
-def _dedup(
-    state: StateManager,
-    tickets: List[TicketResult],
-    cfg: FilterConfig,
-) -> List[TicketResult]:
-    """Filter tickets through the 48h dedup rule."""
-    return [t for t in tickets if state.should_notify(t)]
 
 
 def _record_notifications(

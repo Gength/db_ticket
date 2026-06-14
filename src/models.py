@@ -3,7 +3,7 @@ Domain models for DB Weekend Ticket Scanner.
 
 Defines the core data structures used throughout the pipeline:
 scraped connections, filtered ticket results, and notification records
-for the 48-hour dedup cache.
+for price history tracking.
 """
 
 from __future__ import annotations
@@ -76,19 +76,20 @@ class TicketResult:
     score: float = 0.0          # computed sorting score (higher = better)
     is_fallback: bool = False   # True when this is a fallback recommendation
     fallback_type: str = ""     # "A" or "B" when is_fallback is True
+    prev_price: float | None = None  # last notified price from history, for price change display
 
     def __post_init__(self) -> None:
         # Ensure naive datetimes are handled consistently
         pass
 
 
-# ── NotificationRecord (history cache entry) ─────────────────────────────────
+# ── NotificationRecord (price history entry) ─────────────────────────────────
 
 @dataclass
 class NotificationRecord:
     """
     A record of a sent notification, persisted in history.json for
-    the 48-hour anti-spam window.
+    price-change comparison across runs.
     """
 
     connection_uid: str
