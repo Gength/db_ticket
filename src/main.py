@@ -223,7 +223,7 @@ async def _cmd_test_email(args) -> None:
     cfg = load_config(args.config)
 
     logger.info("Testing SMTP configuration…")
-    logger.info("  Host: %s:%d", cfg.smtp.host, cfg.smtp.port)
+    logger.info("  Host: %s:%d", cfg.smtp.host(), cfg.smtp.port())
     logger.info("  User env: %s", cfg.smtp.user_env)
 
     user = cfg.smtp.user()
@@ -232,9 +232,9 @@ async def _cmd_test_email(args) -> None:
         sys.exit(1)
     logger.info("  User: %s", user)
 
-    to_email = cfg.smtp.to_email
+    to_email = cfg.smtp.to_email()
     if not to_email:
-        logger.error("smtp.to_email is empty in config — aborting test")
+        logger.error("SMTP_TO environment variable not set — aborting test")
         sys.exit(1)
     logger.info("  To: %s", to_email)
 

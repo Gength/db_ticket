@@ -220,20 +220,22 @@ def _send_email(
         )
         return False
 
-    to_addr = smtp_cfg.to_email
-    if not to_addr:
-        logger.error("No recipient email configured (smtp.to_email).")
+    to_raw = smtp_cfg.to_email()
+    if not to_raw:
+        logger.error("No recipient email configured (SMTP_TO env var).")
         return False
+    to_list = [a.strip() for a in to_raw.split(",") if a.strip()]
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = user
-    msg["To"] = to_addr
+    msg["To"] = ", ".join(to_list)
 
-    # Optional CC
-    cc_addr = smtp_cfg.cc.strip() if smtp_cfg.cc else ""
-    if cc_addr:
-        msg["Cc"] = cc_addr
+    # Optional CC (comma-separated for multiple addresses)
+    cc_raw = smtp_cfg.cc()
+    cc_list = [a.strip() for a in cc_raw.split(",") if a.strip()] if cc_raw else []
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
 
     # Attach both plain-text and HTML versions
     plain = body  # Markdown is readable as plain text
@@ -244,21 +246,21 @@ def _send_email(
     if dry_run:
         logger.info("DRY RUN — would send email:")
         logger.info("  Subject: %s", subject)
-        logger.info("  To: %s", to_addr)
-        if cc_addr:
-            logger.info("  Cc: %s", cc_addr)
+        logger.info("  To: %s", ", ".join(to_list))
+        if cc_list:
+            logger.info("  Cc: %s", ", ".join(cc_list))
         logger.info("  Body:\n%s", body)
         return True
 
     try:
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(smtp_cfg.host, smtp_cfg.port, context=context) as server:
+        with smtplib.SMTP_SSL(smtp_cfg.host(), smtp_cfg.port(), context=context) as server:
             server.login(user, password)
-            recipients = [to_addr]
-            if cc_addr:
-                recipients.append(cc_addr)
+            recipients = to_list.copy()
+            if cc_list:
+                recipients.extend(cc_list)
             server.sendmail(user, recipients, msg.as_string())
-        addrs = to_addr + (f" (Cc: {cc_addr})" if cc_addr else "")
+        addrs = ", ".join(to_list) + (f" (Cc: {', '.join(cc_list)})" if cc_list else "")
         logger.info("Email sent successfully to %s", addrs)
         return True
     except smtplib.SMTPException as exc:

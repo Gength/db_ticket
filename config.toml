@@ -11,25 +11,20 @@ trip_type = "SINGLE"
 [search_window]
 # Supported formats: "YYYY-MM-DD", "today", "today+N" (N = days offset)
 start_date = "today+1"
-end_date = "2026-07-05"
+end_date = "2026-07-31"
 
 [passenger]
 age = 28
 bahncard = "none"
 
 [filters]
-target_price = 50.0
+target_price = 40.0
 ticket_class = "2nd"
 direct_only = true
 max_transfers = 1
 min_transfer_time = 15
 # Exclude departures in a time window (HH:MM). Same value = no exclusion.
-exclude_departure_start = "00:00"
-exclude_departure_end = "00:00"
+exclude_departure_start = "23:00"
+exclude_departure_end = "23:59"
 
-[smtp]
-host = "smtp.qq.com"
-port = 465
-# Credentials via .env file: SMTP_USER=xxx SMTP_PASS=xxx
-to_email = "gengtianhao@outlook.com"
-# cc = "fanshiyu.max@foxmail.com"  # optional CC for notifications
+# SMTP settings moved to .env — see README

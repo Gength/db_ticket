@@ -13,3 +13,4 @@ wheels/
 .env
 .reasonix/
 .pytest_cache/
+history.json

@@ -110,17 +110,24 @@ class FilterConfig(BaseModel):
 
 
 class SMTPConfig(BaseModel):
-    """SMTP credentials read from environment (or .env)."""
-    host: str = "smtp.qq.com"
-    port: int = 465
-    to_email: str = ""
-    cc: str = ""  # optional CC recipient for notifications
+    """SMTP — all values read from environment variables (.env)."""
+    user_env: str = "SMTP_USER"
+    pass_env: str = "SMTP_PASS"
+
+    def host(self) -> str:
+        return os.environ.get("SMTP_HOST", "smtp.qq.com")
+
+    def port(self) -> int:
+        return int(os.environ.get("SMTP_PORT", "465"))
+
+    def to_email(self) -> str:
+        return os.environ.get("SMTP_TO", "")
+
+    def cc(self) -> str:
+        return os.environ.get("SMTP_CC", "")
 
     def user(self) -> Optional[str]:
-        val = os.environ.get("SMTP_USER")
-        if val:
-            return val
-        return os.environ.get("SMTP_USER_FALLBACK")
+        return os.environ.get("SMTP_USER")
 
     def password(self) -> Optional[str]:
         return os.environ.get("SMTP_PASS")

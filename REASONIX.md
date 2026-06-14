@@ -11,12 +11,12 @@
 ## Layout
 
 ```
-config.toml        # user-editable routes, filters, passenger, SMTP
+config.toml        # user-editable routes, filters, passenger, timeouts
 scan.sh            # headed scan (dry-run by default)
 test.sh            # pytest runner
 src/
   main.py          # CLI: `scan` / `test-email` subcommands, daily orchestration
-  config.py        # Pydantic models + config.toml loader
+  config.py        # Pydantic models + config.toml loader + TimeoutsConfig defaults
   browser.py       # Playwright persistent-context factory (headed/headless)
   scraper.py       # Web extraction: constructs bp=true URL → Bestpreise slots →
                    #   click cheapest-first → parse Connection objects
@@ -26,7 +26,7 @@ src/
   fallback.py      # Rec A (cheapest over-budget) & Rec B (relaxed direct-only)
   notifier.py      # Mail SMTP_SSL, Markdown table + HTML body
   state.py         # history.json price history
-tests/             # test_config, test_filter, test_fallback, test_state (51 tests)
+tests/             # test_config, test_filter, test_fallback, test_state, test_notifier (50 tests)
 debug/             # debug shell scripts
 ```
 
@@ -37,7 +37,7 @@ debug/             # debug shell scripts
 ./scan.sh --dry-run --limit-dates=3
 ./test.sh                          # pytest -v
 uv run python -m src.main test-email
-SMTP_USER=xxx SMTP_PASS=xxx ./scan.sh   # produce, no dry-run
+.env && ./scan.sh                      # produce, no dry-run (SMTP settings in .env)
 ```
 
 ## Conventions
@@ -57,5 +57,5 @@ SMTP_USER=xxx SMTP_PASS=xxx ./scan.sh   # produce, no dry-run
   Adult (27-64) = `13:16`. Using `27:64` triggers a warning dialog.
 - **Station IBNR** is hardcoded in `scraper.py`. Add unknown stations there.
 - **Email is NOT dry-run by default** — pass `--dry-run` to test without sending.
-- **SMTP credentials** come from `.env` file (SMTP_USER / SMTP_PASS) or
-  environment variables. Not stored in config.toml.
+- **All SMTP settings** (host, port, to, cc, user, pass) come from `.env` file
+  or environment variables. Nothing SMTP-related is in config.toml.

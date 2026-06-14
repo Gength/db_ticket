@@ -33,37 +33,23 @@ vim config.toml                              # edit routes, price, passenger
 8. If no matches: computes fallback recommendations A (cheapest) & B (relaxed direct)
 9. Records notifications in `history.json` for price-change display in future emails
 
-## SMTP / msmtp setup
+## SMTP configuration (.env)
 
-Install the system MTA:
-
-```bash
-sudo apt install msmtp msmtp-mta bsd-mailx
-```
-
-Create `~/.msmtprc` with your email credentials (any SMTP provider):
+All SMTP settings go into `.env` (not `config.toml`, to protect your email address):
 
 ```bash
-cat > ~/.msmtprc <<'EOF'
-defaults
-auth           on
-tls            on
-tls_trust_file /etc/ssl/certs/ca-certificates.crt
-
-account        default
-host           smtp.example.com
-port           465
-from           your_email@example.com
-user           your_email@example.com
-password       your_app_password
-EOF
-chmod 600 ~/.msmtprc
+SMTP_HOST=smtp.qq.com
+SMTP_PORT=465
+SMTP_USER=your_email@qq.com
+SMTP_PASS=your_app_password
+SMTP_TO=you@example.com                          # comma-separated for multiple
+# SMTP_CC=cc1@example.com,cc2@example.com        # optional, also supports multiple
 ```
 
 Test with:
 
 ```bash
-echo "Test from DB scanner" | mail -s "Test" you@example.com
+uv run python -m src.main test-email
 ```
 
 ## Configuration (`config.toml`)
@@ -90,10 +76,7 @@ min_transfer_time = 15
 exclude_departure_start = "00:00"
 exclude_departure_end = "00:00"
 
-[smtp]
-host = "smtp.example.com"
-port = 465
-to_email = "you@example.com"
+# SMTP settings are in .env — see section above
 ```
 
 ## Project structure
