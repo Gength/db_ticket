@@ -1,0 +1,38 @@
+# DB Weekend Ticket Scanner Configuration
+# All comments and docstrings in this codebase are written in English.
+
+[routes]
+
+[[routes.entries]]
+from_station = "Berlin Hbf"
+to_station = "München Hbf"
+trip_type = "SINGLE"
+
+[search_window]
+# Supported formats: "YYYY-MM-DD", "today", "today+N" (N = days offset)
+start_date = "today+1"
+end_date = "2026-07-05"
+
+[passenger]
+age = 28
+bahncard = "none"
+
+[filters]
+target_price = 30.0
+ticket_class = "2nd"
+direct_only = true
+max_transfers = 1
+min_transfer_time = 15
+# Exclude departures in a time window (HH:MM). Same value = no exclusion.
+exclude_departure_start = "00:00"
+exclude_departure_end = "00:00"
+
+[smtp]
+host = "smtp.qq.com"
+port = 465
+# Credentials must be provided via environment variables:
+#   SMTP_USER=your_qq_email@qq.com
+#   SMTP_PASS=your_app_password
+user_env = "SMTP_USER"
+pass_env = "SMTP_PASS"
+to_email = "gengtianhao@outlook.com"
